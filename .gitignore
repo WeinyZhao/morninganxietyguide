@@ -1,0 +1,9 @@
+node_modules/
+.next/
+out/
+.DS_Store
+*.log
+.env
+# .env.example is committed (it's the public template, no secrets)
+!.env.example
+

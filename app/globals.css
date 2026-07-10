@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 250 252 255;
+  --foreground: 15 23 42;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: 8 12 24;
+    --foreground: 226 232 240;
+  }
+}
+
+html, body {
+  background: rgb(var(--background));
+  color: rgb(var(--foreground));
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Smooth circle scale during phases */
+.circle-phase {
+  transition: transform 100ms linear, background-color 400ms ease;
+}
+
+.circle-idle {
+  transform: scale(0.7);
+}
+
+.circle-inhale {
+  transform: scale(1);
+}
+
+.circle-hold {
+  transform: scale(1);
+}
+
+.circle-exhale {
+  transform: scale(0.55);
+}
+
+/* Phase color states */
+.bg-inhale { background-color: rgb(56 189 248 / 0.85); }
+.bg-hold   { background-color: rgb(14 165 233 / 0.85); }
+.bg-exhale { background-color: rgb(2 132 199 / 0.85); }
