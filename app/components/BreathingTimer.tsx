@@ -6,39 +6,62 @@ import { useBreathingTimer } from "@/lib/useTimer";
 import {
   initAudio,
   isAudioReady,
+  playBeat,
   playConfirmationTone,
   playPhaseCue,
   playSessionStartCue,
   setMuted,
 } from "@/lib/audio";
+
+type SoundMode = "off" | "cues" | "cues-and-beats";
 import BreathingCircle from "./BreathingCircle";
 
 export default function BreathingTimer() {
   const [pattern, setPattern] = useState<BreathingPattern>(PATTERNS[0]);
   const [duration, setDuration] = useState<Duration>(DURATIONS[2]); // 5 min default
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [muted, setMutedState] = useState(true);
+  const [soundMode, setSoundMode] = useState<SoundMode>("off");
 
-  const timer = useBreathingTimer(pattern, duration.seconds, (phase) => {
-    // Called from useTimer on every phase change. No-op when muted.
-    playPhaseCue(phase);
-  });
+  const timer = useBreathingTimer(
+    pattern,
+    duration.seconds,
+    (phase) => {
+      // Phase cue — called from useTimer on every phase change.
+      // No-op when soundMode is 'off'.
+      if (soundMode !== "off") playPhaseCue(phase);
+    },
+    () => {
+      // Beat tick — called from useTimer on each whole-second boundary
+      // (except last second of phase). Only plays when soundMode is 'cues-and-beats'.
+      if (soundMode === "cues-and-beats") playBeat();
+    }
+  );
   const totalProgress = timer.totalElapsed / timer.totalSeconds;
   const isRunning = timer.state === "running";
   const isCompleted = timer.state === "completed";
 
-  const handleToggleMute = () => {
+  const handleCycleSoundMode = () => {
     // CRITICAL for iOS Safari: initAudio() must be called SYNCHRONOUSLY
-    // inside this user-gesture handler. If we await or use setTimeout,
-    // iOS considers the AudioContext out-of-gesture and stays silent.
+    // inside this user-gesture handler.
     initAudio();
 
-    const newMuted = !muted;
-    setMuted(newMuted);
-    setMutedState(newMuted);
+    // Cycle: off → cues → cues-and-beats → off
+    const next: SoundMode =
+      soundMode === "off"
+        ? "cues"
+        : soundMode === "cues"
+        ? "cues-and-beats"
+        : "off";
 
-    // Play confirmation tone AFTER enabling sound so user gets feedback
-    if (!newMuted) {
+    // Sync with audio module's muted flag
+    // 'off' means muted = true; 'cues' or 'cues-and-beats' means muted = false
+    const shouldMute = next === "off";
+    setMuted(shouldMute);
+
+    setSoundMode(next);
+
+    // Play confirmation tone when first enabling sound (not when switching modes)
+    if (next !== "off") {
       playConfirmationTone();
     }
   };
@@ -47,10 +70,16 @@ export default function BreathingTimer() {
     // Also init on Start click (in case user never toggled the sound button)
     initAudio();
 
-    // Play start cue if sound is enabled (no-op when muted)
-    if (!muted) playSessionStartCue();
+    // Play start cue if sound is enabled
+    if (soundMode !== "off") playSessionStartCue();
     timer.start();
   };
+
+  const soundModeLabel = {
+    off: { emoji: "🔕", text: "Sound off", hint: "Tap to enable cues" },
+    cues: { emoji: "🔔", text: "Phase cues", hint: "Tap for cues + beats" },
+    "cues-and-beats": { emoji: "🎵", text: "Cues + beats", hint: "Tap to disable" },
+  }[soundMode];
 
   return (
     <div className="w-full max-w-2xl mx-auto px-4 py-2 sm:py-6">
@@ -143,15 +172,22 @@ export default function BreathingTimer() {
 
       {/* Timer Display — Visual Center */}
       <div className="flex flex-col items-center justify-center my-3 sm:my-6">
-        {/* Sound toggle — above the circle, always editable */}
+        {/* Sound toggle — 3 states: off / cues / cues+beats (cycles on click) */}
         <button
-          onClick={handleToggleMute}
-          aria-label={muted ? "Enable phase sound cues" : "Mute phase sound cues"}
-          aria-pressed={!muted}
-          className="mb-2 sm:mb-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors bg-white/60 dark:bg-brand-900/40 border border-brand-200 dark:border-brand-800 hover:border-brand-400 text-brand-700 dark:text-brand-300"
+          onClick={handleCycleSoundMode}
+          aria-label={soundModeLabel.hint}
+          aria-pressed={soundMode !== "off"}
+          title={soundModeLabel.hint}
+          className={`mb-2 sm:mb-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors border ${
+            soundMode === "off"
+              ? "bg-white/60 dark:bg-brand-900/40 border-brand-200 dark:border-brand-800 hover:border-brand-400 text-brand-700 dark:text-brand-300"
+              : soundMode === "cues"
+              ? "bg-brand-50 dark:bg-brand-900/60 border-brand-400 dark:border-brand-600 text-brand-800 dark:text-brand-200"
+              : "bg-brand-100 dark:bg-brand-800/60 border-brand-500 dark:border-brand-500 text-brand-900 dark:text-brand-100"
+          }`}
         >
-          <span aria-hidden="true">{muted ? "🔕" : "🔔"}</span>
-          <span>{muted ? "Sound off" : "Sound on"}</span>
+          <span aria-hidden="true">{soundModeLabel.emoji}</span>
+          <span>{soundModeLabel.text}</span>
         </button>
         <BreathingCircle
           phase={timer.currentPhase}

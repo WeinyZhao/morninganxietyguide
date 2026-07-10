@@ -21,6 +21,7 @@ export function useBreathingTimer(
   pattern: BreathingPattern,
   totalSeconds: number,
   onPhaseChange?: (phase: Phase) => void,
+  onBeat?: () => void,
 ) {
   const [state, setState] = useState<TimerState>("idle");
   const [phaseIndex, setPhaseIndex] = useState(0);
@@ -32,12 +33,26 @@ export function useBreathingTimer(
 
   const currentStep = pattern.steps[phaseIndex];
 
-  // Keep latest callback in a ref so the tick effect doesn't re-subscribe
-  // on every render (which would reset the interval and skip cues).
+  // Keep latest callbacks in refs so the tick effect doesn't re-subscribe
+  // on every render (which would reset the interval and skip cues/beats).
   const onPhaseChangeRef = useRef(onPhaseChange);
   useEffect(() => {
     onPhaseChangeRef.current = onPhaseChange;
   }, [onPhaseChange]);
+
+  const onBeatRef = useRef(onBeat);
+  useEffect(() => {
+    onBeatRef.current = onBeat;
+  }, [onBeat]);
+
+  // Track which integer seconds we've already fired beats for this phase,
+  // so we don't double-fire if the interval drifts.
+  const beatSecondsFiredRef = useRef<Set<number>>(new Set());
+
+  // Reset the beat-fired set whenever we change phase
+  useEffect(() => {
+    beatSecondsFiredRef.current.clear();
+  }, [phaseIndex]);
 
   const stop = useCallback(() => {
     if (intervalRef.current) {
@@ -91,6 +106,24 @@ export function useBreathingTimer(
           });
           return 0;
         }
+
+        // BEAT LOGIC: fire on each whole second boundary EXCEPT the last
+        // second of the phase (which would overlap with the next phase cue).
+        // The current beat-second is floor(newElapsed). We fire when we've
+        // just crossed an integer boundary (newElapsed % 1 < 0.1 wrap).
+        const currentSecond = Math.floor(newElapsed);
+        const phaseSeconds = currentStep.seconds;
+        const isLastSecond = currentSecond >= phaseSeconds - 1;
+        if (
+          onBeatRef.current &&
+          currentSecond >= 1 && // skip the 0-second mark (that's when phase cue plays)
+          !isLastSecond &&
+          !beatSecondsFiredRef.current.has(currentSecond)
+        ) {
+          beatSecondsFiredRef.current.add(currentSecond);
+          queueMicrotask(() => onBeatRef.current?.());
+        }
+
         return newElapsed;
       });
       setTotalElapsed((t) => {

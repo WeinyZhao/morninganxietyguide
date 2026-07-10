@@ -32,6 +32,8 @@ const PHASE_FREQUENCIES: Record<Phase, number> = {
 
 const SOUND_DURATION_SEC = 0.18;
 const PEAK_VOLUME = 0.18;
+const BEAT_VOLUME = 0.054; // 30% of peak — background-level "tick"
+const BEAT_FREQUENCY = 220; // A3 — deeper than phase cues, distinguishable
 
 let audioContext: AudioContext | null = null;
 let masterGain: GainNode | null = null;
@@ -251,6 +253,44 @@ export function playConfirmationTone(): void {
   if (!scheduleTone(659.25)) {
     playBeepBlob(659.25);
   }
+}
+
+/**
+ * Play a soft beat tick. Lower volume + lower frequency than phase cues
+ * so it's distinguishable and doesn't fatigue the listener.
+ * Used for "every second" metronome ticks when user wants guided timing
+ * without looking at the screen (e.g., commuting with eyes closed).
+ */
+export function playBeat(): void {
+  if (muted) return;
+  // Try Web Audio first with low volume
+  if (audioContext && masterGain) {
+    try {
+      const now = audioContext.currentTime;
+      const osc = audioContext.createOscillator();
+      const env = audioContext.createGain();
+
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(BEAT_FREQUENCY, now);
+
+      // Very short envelope — softer than phase cues (5ms attack, 80ms release)
+      env.gain.setValueAtTime(0, now);
+      env.gain.linearRampToValueAtTime(BEAT_VOLUME, now + 0.005);
+      env.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+
+      osc.connect(env);
+      env.connect(masterGain);
+
+      osc.start(now);
+      osc.stop(now + 0.1);
+      return;
+    } catch (err) {
+      debugLog("Beat (Web Audio) failed", err);
+      // Fall through to fallback
+    }
+  }
+  // Fallback: shorter WAV blob
+  playBeepBlob(BEAT_FREQUENCY);
 }
 
 /**
