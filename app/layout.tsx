@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import AudioDebugOverlay from "./components/AudioDebugOverlay";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -49,6 +50,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen font-sans antialiased">
+        <AudioDebugOverlay />
         {children}
       </body>
     </html>

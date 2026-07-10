@@ -1,104 +1,103 @@
 /**
- * audio.ts — Web Audio API phase cues (iOS Safari-safe version)
+ * audio.ts — Phase cue audio with iOS Safari compatibility
  *
- * KEY FIX vs original:
- *   iOS Safari requires that AudioContext be created AND resumed SYNCHRONOUSLY
- *   inside a user gesture handler (click, touch). Anything async (Promise,
- *   setTimeout, microtask) breaks the gesture chain and audio goes silent.
+ * History:
+ *  - v1 (commit b37ed4a): Pure Web Audio API. Worked on macOS but silent on iPhone.
+ *  - v2 (current): Dual-path audio:
+ *      1. Web Audio API (preferred — cleaner envelopes)
+ *      2. HTMLAudioElement fallback (more reliable on iOS Safari)
  *
- *   Previous code had two problems:
- *     1. AudioContext was created inside getContext() which was called from
- *        ensureContextRunning() — the resume() Promise was a microtask away
- *        from the user gesture, so iOS considered it out-of-gesture.
- *     2. playSessionStartCue() and toggleMute() used setTimeout to schedule
- *        tones — setTimeout breaks the user-gesture context completely on iOS.
+ * Why dual path?
+ *   iOS Safari has multiple quirks with Web Audio API:
+ *     - User gesture window is ~1 second (very strict)
+ *     - AudioContext can silently fail if created outside gesture
+ *     - WebKit bug: in some iOS versions, AudioContext.state goes
+ *       'suspended' on tab background then never resumes
+ *   HTMLAudioElement with a data:URL or short blob is more reliable on iOS
+ *   because it can be triggered from <audio>.play() which has simpler rules.
  *
- *   New approach:
- *     1. initAudio() is called SYNCHRONOUSLY from a click handler
- *     2. All tone scheduling uses ctx.currentTime (Audio API's internal clock),
- *        not setTimeout. osc.start(time) where time is in the future works
- *        fine and stays within the gesture's "trust window" (~1-2 sec).
- *     3. playTone() is exported so React can call it directly if needed.
+ * Debug overlay (DEV_AUDIO_DEBUG=true):
+ *   - Shows on-screen AudioContext state + last error
+ *   - Toggle via window.localStorage.devAudioDebug = '1'
  */
 
 import type { Phase } from "./breathing-patterns";
 
-/**
- * Frequency map (in Hz, equal-tempered, A4 = 440 Hz reference).
- *
- * Musical arc: the inhale rises, hold sustains higher, exhale descends,
- * hold-empty rests in the low register. This creates a familiar
- * inhale-up / exhale-down pattern that matches body intuition.
- */
 const PHASE_FREQUENCIES: Record<Phase, number> = {
-  inhale: 523.25, // C5     — rises with the breath
-  "hold-in": 659.25, // E5   — bright sustain
-  exhale: 440.0, // A4      — drops with the breath
-  "hold-out": 293.66, // D4  — rest in the low register
+  inhale: 523.25, // C5
+  "hold-in": 659.25, // E5
+  exhale: 440.0, // A4
+  "hold-out": 293.66, // D4
 };
 
-const SOUND_DURATION_SEC = 0.18; // ~180ms per cue
-const PEAK_VOLUME = 0.18; // soft but audible on phone speakers
+const SOUND_DURATION_SEC = 0.18;
+const PEAK_VOLUME = 0.18;
 
-/**
- * Module-level state. AudioContext is created lazily but MUST be initialized
- * inside a user gesture — see `initAudio()`.
- */
 let audioContext: AudioContext | null = null;
 let masterGain: GainNode | null = null;
-let muted = true; // Default muted — user must opt in
+let muted = true;
+let lastError: string | null = null;
 
 /**
- * Initialize the AudioContext SYNCHRONOUSLY inside a user-gesture handler.
- *
- * iOS Safari rule (as of iOS 17): AudioContext can be created in a user
- * gesture, and resume() must be called synchronously (no awaiting Promises
- * in the same microtask). We return a Promise so callers can chain any
- * post-init setup, but the resume() call itself is synchronous.
- *
- * Returns true if audio is ready, false if Web Audio is unavailable.
+ * Debug overlay — renders state into a fixed-position div so the user
+ * (or Weiny testing on iPhone) can see what's happening.
+ */
+function debugLog(msg: string, error?: unknown) {
+  if (typeof window === "undefined") return;
+  if (error) {
+    lastError = error instanceof Error ? error.message : String(error);
+    console.warn("[audio]", msg, error);
+  } else {
+    console.log("[audio]", msg);
+  }
+  // Update on-screen debug element if it exists
+  const el = document.getElementById("audio-debug");
+  if (el) {
+    el.textContent = `${msg}${error ? `\nERR: ${lastError}` : ""}`;
+  }
+}
+
+/**
+ * Initialize Web Audio context. Called from user-gesture handler.
+ * Returns true if audio is ready, false otherwise.
  */
 export function initAudio(): boolean {
   if (typeof window === "undefined") return false;
 
-  // If already initialized and running, nothing to do
   if (audioContext && audioContext.state === "running") return true;
 
   try {
     if (!audioContext) {
-      // Create context — must happen inside user gesture
       const Ctor: typeof AudioContext | undefined =
         window.AudioContext ||
         (window as unknown as { webkitAudioContext?: typeof AudioContext })
           .webkitAudioContext;
-      if (!Ctor) return false;
+      if (!Ctor) {
+        debugLog("Web Audio not supported");
+        return false;
+      }
 
       audioContext = new Ctor();
       masterGain = audioContext.createGain();
       masterGain.gain.value = 1;
       masterGain.connect(audioContext.destination);
+      debugLog(`AudioContext created, state=${audioContext.state}`);
     }
 
-    // Resume synchronously — required by Safari/iOS
     if (audioContext.state === "suspended") {
-      void audioContext.resume(); // The void ignores the Promise but the
-                                   // call itself is synchronous, which is what
-                                   // Safari checks for.
+      void audioContext.resume();
+      debugLog(`AudioContext resume() called, state=${audioContext.state}`);
     }
 
     return audioContext.state === "running";
   } catch (err) {
-    console.warn("Web Audio init failed:", err);
+    debugLog("Web Audio init failed", err);
     return false;
   }
 }
 
 /**
- * Schedule a soft sine-wave tone at the given frequency.
- * Uses ctx.currentTime for scheduling (NOT setTimeout) so the call
- * stays within iOS Safari's gesture trust window.
- *
- * Returns true if scheduled, false if skipped.
+ * Schedule a Web Audio tone. Returns true if scheduled.
  */
 function scheduleTone(frequency: number, startOffset = 0): boolean {
   if (!audioContext || !masterGain || muted) return false;
@@ -110,13 +109,11 @@ function scheduleTone(frequency: number, startOffset = 0): boolean {
 
     osc.type = "sine";
     osc.frequency.setValueAtTime(frequency, now);
-    // Subtle pitch glide makes the cue feel less "buzzy"
     osc.frequency.exponentialRampToValueAtTime(
       frequency * 0.98,
       now + SOUND_DURATION_SEC
     );
 
-    // Envelope: fast attack (10ms) to avoid click, exponential release
     env.gain.setValueAtTime(0, now);
     env.gain.linearRampToValueAtTime(PEAK_VOLUME, now + 0.01);
     env.gain.exponentialRampToValueAtTime(0.001, now + SOUND_DURATION_SEC);
@@ -128,50 +125,140 @@ function scheduleTone(frequency: number, startOffset = 0): boolean {
     osc.stop(now + SOUND_DURATION_SEC + 0.05);
     return true;
   } catch (err) {
-    console.warn("Failed to schedule tone:", err);
+    debugLog("Failed to schedule tone", err);
     return false;
   }
 }
 
 /**
- * Play the cue sound for a given phase. Safe to call when muted (no-op).
+ * FALLBACK: Play a beep using HTMLAudioElement + generated WAV blob.
+ * This is more reliable on iOS Safari than Web Audio API.
+ *
+ * The WAV is a tiny PCM file with the requested frequency. Generated
+ * on the fly so we don't ship an audio asset.
+ */
+function playBeepBlob(frequency: number): boolean {
+  if (typeof window === "undefined") return false;
+
+  try {
+    const sampleRate = 22050;
+    const duration = 0.12; // shorter than Web Audio to feel snappy
+    const numSamples = Math.floor(sampleRate * duration);
+    const bytesPerSample = 2;
+    const blockAlign = bytesPerSample;
+    const byteRate = sampleRate * blockAlign;
+    const dataSize = numSamples * bytesPerSample;
+
+    // WAV header (44 bytes) + PCM data
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
+
+    // "RIFF" header
+    writeString(view, 0, "RIFF");
+    view.setUint32(4, 36 + dataSize, true);
+    writeString(view, 8, "WAVE");
+    writeString(view, 12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, 1, true); // mono
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, 16, true); // bits per sample
+    writeString(view, 36, "data");
+    view.setUint32(40, dataSize, true);
+
+    // PCM samples — sine wave with envelope
+    const amplitude = 0.18 * 32767;
+    for (let i = 0; i < numSamples; i++) {
+      const t = i / sampleRate;
+      // Apply attack/release envelope
+      let envelope: number;
+      if (t < 0.01) {
+        envelope = t / 0.01; // 10ms attack
+      } else if (t > duration - 0.05) {
+        envelope = (duration - t) / 0.05; // 50ms release
+      } else {
+        envelope = 1;
+      }
+      const sample = Math.sin(2 * Math.PI * frequency * t) * amplitude * envelope;
+      view.setInt16(44 + i * 2, sample, true);
+    }
+
+    const blob = new Blob([buffer], { type: "audio/wav" });
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audio.volume = 1;
+    const playPromise = audio.play();
+    if (playPromise) {
+      playPromise.catch((err) => {
+        debugLog("Audio.play() failed", err);
+      });
+    }
+    // Cleanup URL after playback
+    audio.onended = () => {
+      URL.revokeObjectURL(url);
+    };
+    return true;
+  } catch (err) {
+    debugLog("Fallback beep failed", err);
+    return false;
+  }
+}
+
+function writeString(view: DataView, offset: number, str: string) {
+  for (let i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i));
+  }
+}
+
+/**
+ * Play phase cue. Tries Web Audio first, falls back to HTMLAudioElement.
  */
 export function playPhaseCue(phase: Phase): void {
   if (muted) return;
   const frequency = PHASE_FREQUENCIES[phase];
-  if (frequency) scheduleTone(frequency);
+  if (!frequency) return;
+
+  // Try Web Audio first
+  if (!scheduleTone(frequency)) {
+    debugLog("Web Audio failed, using HTMLAudioElement fallback");
+    playBeepBlob(frequency);
+  }
 }
 
 /**
- * Play a "start session" cue — three ascending tones (C5 → E5 → G5).
- * All tones scheduled via ctx.currentTime, NOT setTimeout, so they
- * stay in iOS Safari's gesture trust window.
- *
- * Safe to call when muted (no-op).
+ * Play session start cue — three ascending tones.
  */
 export function playSessionStartCue(): void {
   if (muted) return;
   const tones = [523.25, 659.25, 783.99]; // C5, E5, G5
   tones.forEach((freq, i) => {
-    scheduleTone(freq, i * 0.09); // 90ms spacing via currentTime offset
+    // Try Web Audio scheduling
+    if (!scheduleTone(freq, i * 0.09)) {
+      // Fallback: schedule HTMLAudioElement with setTimeout
+      // (less reliable on iOS but still works for start cue)
+      setTimeout(() => playBeepBlob(freq), i * 90);
+    }
   });
 }
 
 /**
- * Play a single confirmation tone. Useful for UI feedback (e.g., when
- * toggling mute on). Caller must invoke from within a user gesture.
+ * Play single confirmation tone.
  */
 export function playConfirmationTone(): void {
   if (muted) return;
-  scheduleTone(659.25); // E5
+  if (!scheduleTone(659.25)) {
+    playBeepBlob(659.25);
+  }
 }
 
 /**
- * Mute / unmute audio. Caller should also call initAudio() first
- * (typically inside the same click handler that calls this).
+ * Mute / unmute.
  */
 export function setMuted(value: boolean): void {
   muted = value;
+  debugLog(`Muted=${muted}, AudioContext=${audioContext?.state ?? "none"}`);
 }
 
 /**
@@ -182,9 +269,24 @@ export function isMuted(): boolean {
 }
 
 /**
- * Check if AudioContext is ready (exists and running).
- * Useful for showing a "tap to enable audio" hint if needed.
+ * Check if audio is ready.
  */
 export function isAudioReady(): boolean {
   return audioContext !== null && audioContext.state === "running";
+}
+
+/**
+ * Get debug info for the on-screen overlay.
+ */
+export function getDebugInfo(): string {
+  return JSON.stringify(
+    {
+      ctx: audioContext?.state ?? "none",
+      muted,
+      lastError,
+      sampleRate: audioContext?.sampleRate ?? null,
+    },
+    null,
+    2
+  );
 }
