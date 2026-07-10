@@ -16,7 +16,9 @@ export default function Home() {
       </header>
 
       {/* The Tool */}
-      <BreathingTimer />
+      <div id="timer" className="scroll-mt-16">
+        <BreathingTimer />
+      </div>
 
       {/* SEO Content */}
       <SEOSection />
