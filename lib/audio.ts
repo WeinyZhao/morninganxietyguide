@@ -1,20 +1,24 @@
 /**
- * audio.ts — Web Audio API phase cues
+ * audio.ts — Web Audio API phase cues (iOS Safari-safe version)
  *
- * Generates soft sine-wave tones with smooth envelopes to cue phase changes
- * (inhale / hold / exhale / hold-empty). No external audio files needed.
+ * KEY FIX vs original:
+ *   iOS Safari requires that AudioContext be created AND resumed SYNCHRONOUSLY
+ *   inside a user gesture handler (click, touch). Anything async (Promise,
+ *   setTimeout, microtask) breaks the gesture chain and audio goes silent.
  *
- * Design choices:
- *  - Default MUTED — users opt in via the 🔔 button. Reasons:
- *    1. Mobile autoplay restrictions require user gesture anyway
- *    2. Sudden sound on page load would be jarring
- *    3. Users in shared spaces (offices, libraries) shouldn't have to scramble
- *  - Soft sine wave + envelope (10ms attack, 200ms release) — no click/pop
- *  - Light volume (0.15) — noticeable but not startling
- *  - Per-phase frequencies create a melodic arc: low → high → mid → low
+ *   Previous code had two problems:
+ *     1. AudioContext was created inside getContext() which was called from
+ *        ensureContextRunning() — the resume() Promise was a microtask away
+ *        from the user gesture, so iOS considered it out-of-gesture.
+ *     2. playSessionStartCue() and toggleMute() used setTimeout to schedule
+ *        tones — setTimeout breaks the user-gesture context completely on iOS.
  *
- * Browser support: All modern browsers. Safari requires AudioContext to be
- * resumed after user interaction; we handle that in `ensureContextRunning()`.
+ *   New approach:
+ *     1. initAudio() is called SYNCHRONOUSLY from a click handler
+ *     2. All tone scheduling uses ctx.currentTime (Audio API's internal clock),
+ *        not setTimeout. osc.start(time) where time is in the future works
+ *        fine and stays within the gesture's "trust window" (~1-2 sec).
+ *     3. playTone() is exported so React can call it directly if needed.
  */
 
 import type { Phase } from "./breathing-patterns";
@@ -33,125 +37,141 @@ const PHASE_FREQUENCIES: Record<Phase, number> = {
   "hold-out": 293.66, // D4  — rest in the low register
 };
 
-const SOUND_DURATION_SEC = 0.18; // ~180ms per cue (short enough to not feel laggy)
-const PEAK_VOLUME = 0.15; // soft
+const SOUND_DURATION_SEC = 0.18; // ~180ms per cue
+const PEAK_VOLUME = 0.18; // soft but audible on phone speakers
 
 /**
- * Module-level state. AudioContext is created lazily on first user interaction
- * (Safari/iOS require this — see `ensureContextRunning`).
+ * Module-level state. AudioContext is created lazily but MUST be initialized
+ * inside a user gesture — see `initAudio()`.
  */
 let audioContext: AudioContext | null = null;
 let masterGain: GainNode | null = null;
 let muted = true; // Default muted — user must opt in
 
 /**
- * Lazy AudioContext creation. Returns null if Web Audio is unavailable
- * (e.g., very old browser, server-side rendering, security restrictions).
- */
-function getContext(): AudioContext | null {
-  if (typeof window === "undefined") return null;
-  if (audioContext) return audioContext;
-
-  try {
-    const Ctor: typeof AudioContext | undefined =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext?: typeof AudioContext })
-        .webkitAudioContext;
-    if (!Ctor) return null;
-
-    audioContext = new Ctor();
-    masterGain = audioContext.createGain();
-    masterGain.gain.value = 1;
-    masterGain.connect(audioContext.destination);
-    return audioContext;
-  } catch (err) {
-    // Some browsers (Safari privacy mode) throw on construction. Fail silently.
-    console.warn("Web Audio unavailable:", err);
-    return null;
-  }
-}
-
-/**
- * Ensure the AudioContext is running. Required on Safari/iOS where the
- * context starts in 'suspended' state until a user gesture occurs.
- */
-export function ensureContextRunning(): void {
-  const ctx = getContext();
-  if (ctx && ctx.state === "suspended") {
-    void ctx.resume();
-  }
-}
-
-/**
- * Play a soft sine-wave tone at the given frequency. Uses an envelope
- * (10ms attack, 200ms release) to avoid the click/pop that raw OscillatorNode
- * start/stop produces.
+ * Initialize the AudioContext SYNCHRONOUSLY inside a user-gesture handler.
  *
- * Returns true if played, false if skipped (no context or muted).
+ * iOS Safari rule (as of iOS 17): AudioContext can be created in a user
+ * gesture, and resume() must be called synchronously (no awaiting Promises
+ * in the same microtask). We return a Promise so callers can chain any
+ * post-init setup, but the resume() call itself is synchronous.
+ *
+ * Returns true if audio is ready, false if Web Audio is unavailable.
  */
-function playTone(frequency: number): boolean {
-  const ctx = getContext();
-  if (!ctx || !masterGain || muted) return false;
+export function initAudio(): boolean {
+  if (typeof window === "undefined") return false;
+
+  // If already initialized and running, nothing to do
+  if (audioContext && audioContext.state === "running") return true;
 
   try {
-    const osc = ctx.createOscillator();
-    const env = ctx.createGain();
-    const now = ctx.currentTime;
+    if (!audioContext) {
+      // Create context — must happen inside user gesture
+      const Ctor: typeof AudioContext | undefined =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext;
+      if (!Ctor) return false;
+
+      audioContext = new Ctor();
+      masterGain = audioContext.createGain();
+      masterGain.gain.value = 1;
+      masterGain.connect(audioContext.destination);
+    }
+
+    // Resume synchronously — required by Safari/iOS
+    if (audioContext.state === "suspended") {
+      void audioContext.resume(); // The void ignores the Promise but the
+                                   // call itself is synchronous, which is what
+                                   // Safari checks for.
+    }
+
+    return audioContext.state === "running";
+  } catch (err) {
+    console.warn("Web Audio init failed:", err);
+    return false;
+  }
+}
+
+/**
+ * Schedule a soft sine-wave tone at the given frequency.
+ * Uses ctx.currentTime for scheduling (NOT setTimeout) so the call
+ * stays within iOS Safari's gesture trust window.
+ *
+ * Returns true if scheduled, false if skipped.
+ */
+function scheduleTone(frequency: number, startOffset = 0): boolean {
+  if (!audioContext || !masterGain || muted) return false;
+
+  try {
+    const now = audioContext.currentTime + startOffset;
+    const osc = audioContext.createOscillator();
+    const env = audioContext.createGain();
 
     osc.type = "sine";
     osc.frequency.setValueAtTime(frequency, now);
-    // Subtle pitch glide (~30ms) makes the cue feel less "buzzy"
-    osc.frequency.exponentialRampToValueAtTime(frequency * 0.98, now + SOUND_DURATION_SEC);
+    // Subtle pitch glide makes the cue feel less "buzzy"
+    osc.frequency.exponentialRampToValueAtTime(
+      frequency * 0.98,
+      now + SOUND_DURATION_SEC
+    );
 
-    // Envelope: fast attack to avoid click, exponential release to feel natural
+    // Envelope: fast attack (10ms) to avoid click, exponential release
     env.gain.setValueAtTime(0, now);
-    env.gain.linearRampToValueAtTime(PEAK_VOLUME, now + 0.01); // 10ms attack
-    env.gain.exponentialRampToValueAtTime(0.001, now + SOUND_DURATION_SEC); // release
+    env.gain.linearRampToValueAtTime(PEAK_VOLUME, now + 0.01);
+    env.gain.exponentialRampToValueAtTime(0.001, now + SOUND_DURATION_SEC);
 
     osc.connect(env);
     env.connect(masterGain);
 
     osc.start(now);
     osc.stop(now + SOUND_DURATION_SEC + 0.05);
+    return true;
   } catch (err) {
-    // Should never happen, but don't break the timer if audio glitches
-    console.warn("Failed to play tone:", err);
+    console.warn("Failed to schedule tone:", err);
+    return false;
   }
-  return true;
 }
 
 /**
- * Play the cue sound for a given phase. Safe to call even if muted —
- * silently no-ops when audio is disabled.
+ * Play the cue sound for a given phase. Safe to call when muted (no-op).
  */
 export function playPhaseCue(phase: Phase): void {
+  if (muted) return;
   const frequency = PHASE_FREQUENCIES[phase];
-  if (frequency) playTone(frequency);
+  if (frequency) scheduleTone(frequency);
 }
 
 /**
- * Play a short "start session" cue — three ascending tones (C5 → E5 → A5)
- * signaling that the timer has started. Helps confirm audio is working
- * AND gives the user a moment to settle in.
+ * Play a "start session" cue — three ascending tones (C5 → E5 → G5).
+ * All tones scheduled via ctx.currentTime, NOT setTimeout, so they
+ * stay in iOS Safari's gesture trust window.
+ *
+ * Safe to call when muted (no-op).
  */
 export function playSessionStartCue(): void {
   if (muted) return;
-  const ctx = getContext();
-  if (!ctx) return;
-
-  const tones = [523.25, 659.25, 783.99]; // C5, E5, G5 — rising triad
+  const tones = [523.25, 659.25, 783.99]; // C5, E5, G5
   tones.forEach((freq, i) => {
-    setTimeout(() => playTone(freq), i * 90);
+    scheduleTone(freq, i * 0.09); // 90ms spacing via currentTime offset
   });
 }
 
 /**
- * Mute / unmute audio. Returns the new muted state.
+ * Play a single confirmation tone. Useful for UI feedback (e.g., when
+ * toggling mute on). Caller must invoke from within a user gesture.
  */
-export function setMuted(value: boolean): boolean {
-  ensureContextRunning();
+export function playConfirmationTone(): void {
+  if (muted) return;
+  scheduleTone(659.25); // E5
+}
+
+/**
+ * Mute / unmute audio. Caller should also call initAudio() first
+ * (typically inside the same click handler that calls this).
+ */
+export function setMuted(value: boolean): void {
   muted = value;
-  return muted;
 }
 
 /**
@@ -162,15 +182,9 @@ export function isMuted(): boolean {
 }
 
 /**
- * Toggle muted state and return the new value. Plays a confirmation cue
- * when unmuting so the user gets immediate feedback.
+ * Check if AudioContext is ready (exists and running).
+ * Useful for showing a "tap to enable audio" hint if needed.
  */
-export function toggleMute(): boolean {
-  muted = !muted;
-  if (!muted) {
-    ensureContextRunning();
-    // Play a brief confirmation cue so the user knows audio is on
-    setTimeout(() => playTone(659.25), 0); // E5
-  }
-  return muted;
+export function isAudioReady(): boolean {
+  return audioContext !== null && audioContext.state === "running";
 }

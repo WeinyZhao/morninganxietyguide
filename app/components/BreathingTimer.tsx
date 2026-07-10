@@ -4,11 +4,12 @@ import { useState } from "react";
 import { PATTERNS, DURATIONS, type BreathingPattern, type Duration } from "@/lib/breathing-patterns";
 import { useBreathingTimer } from "@/lib/useTimer";
 import {
-  isMuted,
+  initAudio,
+  isAudioReady,
+  playConfirmationTone,
   playPhaseCue,
   playSessionStartCue,
   setMuted,
-  toggleMute,
 } from "@/lib/audio";
 import BreathingCircle from "./BreathingCircle";
 
@@ -27,14 +28,26 @@ export default function BreathingTimer() {
   const isCompleted = timer.state === "completed";
 
   const handleToggleMute = () => {
-    const nowMuted = toggleMute();
-    setMutedState(nowMuted);
+    // CRITICAL for iOS Safari: initAudio() must be called SYNCHRONOUSLY
+    // inside this user-gesture handler. If we await or use setTimeout,
+    // iOS considers the AudioContext out-of-gesture and stays silent.
+    initAudio();
+
+    const newMuted = !muted;
+    setMuted(newMuted);
+    setMutedState(newMuted);
+
+    // Play confirmation tone AFTER enabling sound so user gets feedback
+    if (!newMuted) {
+      playConfirmationTone();
+    }
   };
 
   const handleStart = () => {
-    // Ensure the AudioContext is resumed on first user gesture (Safari/iOS
-    // require this; it's a no-op on desktop). Then play the start cue so
-    // the user gets a clear "audio is on" confirmation.
+    // Also init on Start click (in case user never toggled the sound button)
+    initAudio();
+
+    // Play start cue if sound is enabled (no-op when muted)
     if (!muted) playSessionStartCue();
     timer.start();
   };
