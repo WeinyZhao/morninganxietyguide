@@ -7,3 +7,5 @@ out/
 # .env.example is committed (it's the public template, no secrets)
 !.env.example
 
+.vercel
+.env*

@@ -20,6 +20,7 @@ export interface TimerStatus {
 export function useBreathingTimer(
   pattern: BreathingPattern,
   totalSeconds: number,
+  onPhaseChange?: (phase: Phase) => void,
 ) {
   const [state, setState] = useState<TimerState>("idle");
   const [phaseIndex, setPhaseIndex] = useState(0);
@@ -30,6 +31,13 @@ export function useBreathingTimer(
   const totalCycles = Math.floor(totalSeconds / pattern.cycleSeconds);
 
   const currentStep = pattern.steps[phaseIndex];
+
+  // Keep latest callback in a ref so the tick effect doesn't re-subscribe
+  // on every render (which would reset the interval and skip cues).
+  const onPhaseChangeRef = useRef(onPhaseChange);
+  useEffect(() => {
+    onPhaseChangeRef.current = onPhaseChange;
+  }, [onPhaseChange]);
 
   const stop = useCallback(() => {
     if (intervalRef.current) {
@@ -68,6 +76,14 @@ export function useBreathingTimer(
           // Move to next phase
           setPhaseIndex((idx) => {
             const next = (idx + 1) % pattern.steps.length;
+            // Fire phase-change cue after index updates so the audio engine
+            // plays the NEW phase sound (not the previous one).
+            // We schedule it via the ref to avoid a stale-closure issue.
+            const newPhase = pattern.steps[next].phase;
+            if (onPhaseChangeRef.current) {
+              // Defer to next microtask so React state has settled
+              queueMicrotask(() => onPhaseChangeRef.current?.(newPhase));
+            }
             if (next === 0) {
               setCycles((c) => c + 1);
             }

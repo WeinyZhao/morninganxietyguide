@@ -31,6 +31,14 @@ export const metadata: Metadata = {
     description: "Free 4-4-4-4 breathing tool for morning anxiety relief.",
   },
   robots: { index: true, follow: true },
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+    apple: [
+      { url: "/icon.svg", type: "image/svg+xml", sizes: "180x180" },
+    ],
+  },
 };
 
 export default function RootLayout({

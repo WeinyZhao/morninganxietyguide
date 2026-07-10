@@ -28,10 +28,11 @@ _var_set() {
     return 1
   fi
   # Also reject the placeholder text
-  if [ "${!var_name}" = "PASTE_YOUR_GITHUB_TOKEN_HERE" ] || \
-     [ "${!var_name}" = "PASTE_YOUR_VERCEL_TOKEN_HERE" ]; then
-    return 1
-  fi
+  case "${!var_name}" in
+    PASTE_YOUR_*_HERE)
+      return 1
+      ;;
+  esac
   return 0
 }
 
@@ -58,7 +59,7 @@ if [ "$1" = "VERIFY" ]; then
   echo ""
 
   MISSING=0
-  for var in GITHUB_TOKEN VERCEL_TOKEN VERCEL_PROJECT_ID VERCEL_ORG_ID; do
+  for var in GITHUB_TOKEN VERCEL_TOKEN VERCEL_PROJECT_ID VERCEL_ORG_ID CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_API_TOKEN CLOUDFLARE_ZONE_ID; do
     if _var_set "$var"; then
       # Show only first 4 and last 4 chars, mask the middle
       val="${!var}"

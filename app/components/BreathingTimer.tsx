@@ -3,17 +3,41 @@
 import { useState } from "react";
 import { PATTERNS, DURATIONS, type BreathingPattern, type Duration } from "@/lib/breathing-patterns";
 import { useBreathingTimer } from "@/lib/useTimer";
+import {
+  isMuted,
+  playPhaseCue,
+  playSessionStartCue,
+  setMuted,
+  toggleMute,
+} from "@/lib/audio";
 import BreathingCircle from "./BreathingCircle";
 
 export default function BreathingTimer() {
   const [pattern, setPattern] = useState<BreathingPattern>(PATTERNS[0]);
   const [duration, setDuration] = useState<Duration>(DURATIONS[2]); // 5 min default
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [muted, setMutedState] = useState(true);
 
-  const timer = useBreathingTimer(pattern, duration.seconds);
+  const timer = useBreathingTimer(pattern, duration.seconds, (phase) => {
+    // Called from useTimer on every phase change. No-op when muted.
+    playPhaseCue(phase);
+  });
   const totalProgress = timer.totalElapsed / timer.totalSeconds;
   const isRunning = timer.state === "running";
   const isCompleted = timer.state === "completed";
+
+  const handleToggleMute = () => {
+    const nowMuted = toggleMute();
+    setMutedState(nowMuted);
+  };
+
+  const handleStart = () => {
+    // Ensure the AudioContext is resumed on first user gesture (Safari/iOS
+    // require this; it's a no-op on desktop). Then play the start cue so
+    // the user gets a clear "audio is on" confirmation.
+    if (!muted) playSessionStartCue();
+    timer.start();
+  };
 
   return (
     <div className="w-full max-w-2xl mx-auto px-4 py-2 sm:py-6">
@@ -106,6 +130,16 @@ export default function BreathingTimer() {
 
       {/* Timer Display — Visual Center */}
       <div className="flex flex-col items-center justify-center my-3 sm:my-6">
+        {/* Sound toggle — above the circle, always editable */}
+        <button
+          onClick={handleToggleMute}
+          aria-label={muted ? "Enable phase sound cues" : "Mute phase sound cues"}
+          aria-pressed={!muted}
+          className="mb-2 sm:mb-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors bg-white/60 dark:bg-brand-900/40 border border-brand-200 dark:border-brand-800 hover:border-brand-400 text-brand-700 dark:text-brand-300"
+        >
+          <span aria-hidden="true">{muted ? "🔕" : "🔔"}</span>
+          <span>{muted ? "Sound off" : "Sound on"}</span>
+        </button>
         <BreathingCircle
           phase={timer.currentPhase}
           state={timer.state}
@@ -126,7 +160,7 @@ export default function BreathingTimer() {
       <div className="flex flex-col items-center gap-3 mb-3 sm:mb-6">
         {timer.state !== "running" ? (
           <button
-            onClick={timer.start}
+            onClick={handleStart}
             disabled={isCompleted}
             className="w-full max-w-xs px-8 py-4 bg-brand-500 hover:bg-brand-600 text-white text-lg font-bold rounded-full shadow-xl hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95"
           >
