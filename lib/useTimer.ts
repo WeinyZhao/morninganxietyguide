@@ -107,17 +107,15 @@ export function useBreathingTimer(
           return 0;
         }
 
-        // BEAT LOGIC: fire on each whole second boundary EXCEPT the last
-        // second of the phase (which would overlap with the next phase cue).
-        // The current beat-second is floor(newElapsed). We fire when we've
-        // just crossed an integer boundary (newElapsed % 1 < 0.1 wrap).
+        // BEAT LOGIC: fire on each whole second boundary.
+        // Weiny wants heartbeat-like continuity — beat keeps going even in
+        // the last second of a phase (will overlap slightly with next phase
+        // cue, which adds a nice "accent" beat on phase transitions).
+        // The current beat-second is floor(newElapsed).
         const currentSecond = Math.floor(newElapsed);
-        const phaseSeconds = currentStep.seconds;
-        const isLastSecond = currentSecond >= phaseSeconds - 1;
         if (
           onBeatRef.current &&
           currentSecond >= 1 && // skip the 0-second mark (that's when phase cue plays)
-          !isLastSecond &&
           !beatSecondsFiredRef.current.has(currentSecond)
         ) {
           beatSecondsFiredRef.current.add(currentSecond);
