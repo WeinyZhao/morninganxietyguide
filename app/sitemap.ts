@@ -10,6 +10,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 1.0,
     },
     {
+      url: "https://morninganxietyguide.com/morning-anxiety-relief",
+      lastModified: now,
+      changeFrequency: "monthly",
+      priority: 0.95,
+    },
+    {
       url: "https://morninganxietyguide.com/box-breathing-morning-anxiety",
       lastModified: now,
       changeFrequency: "monthly",
