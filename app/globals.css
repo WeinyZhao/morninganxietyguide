@@ -45,3 +45,25 @@ html, body {
 .bg-inhale { background-color: rgb(56 189 248 / 0.85); }
 .bg-hold   { background-color: rgb(14 165 233 / 0.85); }
 .bg-exhale { background-color: rgb(2 132 199 / 0.85); }
+
+/*
+ * Anchor link scroll offset fix.
+ *
+ * Problem: MDX heading syntax `## [Title](#anchor)` renders as:
+ *   <h2 class="scroll-mt-20"><a id="anchor" href="#anchor">Title</a></h2>
+ *
+ * The `id` lives on the <a>, not the <h2>. When the browser scrolls to
+ * `#anchor`, it aligns the <a> with the viewport top — the parent's
+ * scroll-mt-20 has no effect on the final scroll position. Result: the
+ * heading text ends up hidden behind any sticky header.
+ *
+ * Fix: give the anchor element itself the same scroll margin.
+ */
+h1 a[id],
+h2 a[id],
+h3 a[id],
+h4 a[id],
+h5 a[id],
+h6 a[id] {
+  scroll-margin-top: 5rem;
+}
