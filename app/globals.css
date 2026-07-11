@@ -47,21 +47,15 @@ html, body {
 .bg-exhale { background-color: rgb(2 132 199 / 0.85); }
 
 /*
- * Heading anchor scroll offset.
+ * Anchor scroll offset for all hash navigation.
  *
- * Problem: rehype-slug adds id="..." directly to the heading element
- * (e.g. <h2 id="method-1-box-breathing">). The scroll-mt-20 utility class
- * on the heading provides the offset, but in some browser/viewport states
- * the heading text can still sit behind a sticky header.
+ * scroll-padding-top on html element tells the browser to reserve 5rem
+ * of space at the top of the viewport for ALL scroll-to operations
+ * (including hash navigation, scrollIntoView, etc.).
  *
- * Fix: explicit scroll-margin-top on headings with ids, matching the
- * sticky header height (5rem).
+ * This is more reliable than scroll-margin-top on individual elements,
+ * especially when the target is near the top of the document.
  */
-h1[id],
-h2[id],
-h3[id],
-h4[id],
-h5[id],
-h6[id] {
-  scroll-margin-top: 5rem;
+html {
+  scroll-padding-top: 5rem;
 }
