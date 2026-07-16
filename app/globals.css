@@ -5,12 +5,26 @@
 :root {
   --background: 250 252 255;
   --foreground: 15 23 42;
+
+  /* Breathing circle color palette */
+  --breath-inhale: 56 189 248;   /* sky-400 */
+  --breath-hold:   14 165 233;   /* sky-500 */
+  --breath-exhale: 6  182 212;   /* cyan-500 */
+  --breath-idle:   148 163 184; /* slate-400 */
+  --breath-glow:   56 189 248;   /* sky-400 */
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --background: 8 12 24;
     --foreground: 226 232 240;
+
+    /* Breathing circle color palette — darker, deeper */
+    --breath-inhale: 14 165 233;   /* sky-500 */
+    --breath-hold:   7  158 211;   /* sky-600 */
+    --breath-exhale: 20 184 166;   /* emerald-400 */
+    --breath-idle:   71  85 105; /* slate-600 */
+    --breath-glow:   14 165 233;   /* sky-500 */
   }
 }
 
@@ -20,31 +34,37 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Smooth circle scale during phases */
+/*
+ * Breathing Circle — smooth scale + color transitions
+ *
+ * The JS layer sets --breath-scale (CSS var) on every animation frame.
+ * CSS then smoothly transitions toward it with spring-like easing.
+ *
+ * We use a separate --breath-color CSS var that JS also updates on phase change.
+ * Color transition is intentionally slower (1s) so the hue shift feels organic.
+ */
 .circle-phase {
-  transition: transform 100ms linear, background-color 400ms ease;
+  will-change: transform, background-color, box-shadow;
+  transform: scale(var(--breath-scale, 0.65));
+  background-color: rgba(var(--breath-color, var(--breath-idle)), 0.75);
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+              background-color 1.2s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 1.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.circle-idle {
-  transform: scale(0.7);
+/* Glow halo behind the circle — pulses with breathing */
+.circle-glow {
+  will-change: transform, opacity;
+  transform: scale(var(--breath-scale, 0.65));
+  background: radial-gradient(
+    circle,
+    rgba(var(--breath-glow), 0.35) 0%,
+    rgba(var(--breath-glow), 0.08) 55%,
+    transparent 75%
+  );
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 1.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
-
-.circle-inhale {
-  transform: scale(1);
-}
-
-.circle-hold {
-  transform: scale(1);
-}
-
-.circle-exhale {
-  transform: scale(0.55);
-}
-
-/* Phase color states */
-.bg-inhale { background-color: rgb(56 189 248 / 0.85); }
-.bg-hold   { background-color: rgb(14 165 233 / 0.85); }
-.bg-exhale { background-color: rgb(2 132 199 / 0.85); }
 
 /*
  * Anchor scroll offset for all hash navigation.

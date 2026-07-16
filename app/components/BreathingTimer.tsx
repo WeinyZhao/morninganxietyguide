@@ -193,6 +193,7 @@ export default function BreathingTimer() {
           phase={timer.currentPhase}
           state={timer.state}
           progress={timer.phaseProgress}
+          stepSeconds={timer.currentPhaseSeconds}
           size={220}
         />
         <div className="mt-3 sm:mt-6 text-center">
