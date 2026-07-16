@@ -5,20 +5,29 @@ import type { Phase } from "@/lib/breathing-patterns";
 interface Props {
   phase: Phase;
   state: "idle" | "running" | "paused" | "completed";
-  progress: number;        // 0→1 within current phase
-  stepSeconds: number;     // duration of the current phase step (used for animation timing reference)
+  progress: number;         // 0→1 within current phase
+  stepSeconds?: number;
   size?: number;
 }
 
-const SCALE_MIN = 0.60;  // smallest exhale size
-const SCALE_MAX = 1.00;  // full inhale size
+const SCALE_MIN = 0.62;
+const SCALE_MAX = 1.00;
 
-/** Linear interpolation helper */
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * Math.max(0, Math.min(1, t));
 }
 
-/** Per-phase scale targets at progress=1 */
+// Hard-coded RGB tuples — avoids any CSS var substitution issues in JS
+const PHASE_RGB: Record<Phase, [number, number, number]> = {
+  inhale:    [125, 207, 255], // soft sky blue
+  "hold-in": [56,  189, 248], // deeper sky
+  exhale:    [52,  211, 209], // cyan-teal
+  "hold-out": [56,  189, 248],
+};
+
+const IDLE_RGB: [number, number, number] = [110, 130, 160];
+
+// Scale targets when progress = 1
 const SCALE_TARGET: Record<Phase, number> = {
   inhale:    SCALE_MAX,
   "hold-in": SCALE_MAX,
@@ -26,127 +35,90 @@ const SCALE_TARGET: Record<Phase, number> = {
   "hold-out": SCALE_MIN,
 };
 
-/** Per-phase CSS color variable value (RGB tuple as string) */
-const COLOR_MAP: Record<Phase, string> = {
-  inhale:    "var(--breath-inhale)",
-  "hold-in": "var(--breath-hold)",
-  exhale:    "var(--breath-exhale)",
-  "hold-out": "var(--breath-hold)",
-};
+function rgba(r: number, g: number, b: number, a: number): string {
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
 
 export default function BreathingCircle({
   phase,
   state,
   progress,
-  stepSeconds = 4,
   size = 280,
 }: Props) {
   const isIdle = state === "idle";
 
-  // Compute real-time scale from progress
-  const scale = isIdle
-    ? SCALE_MIN + (SCALE_MAX - SCALE_MIN) * 0.25  // idle: slightly contracted
-    : lerp(
-        // Starting scale is the *previous* phase's target, landing at current phase's target
-        SCALE_TARGET[phase === "inhale" ? "hold-out" : phase === "exhale" ? "hold-in" : phase],
-        SCALE_TARGET[phase],
-        progress
-      );
+  // Resolve RGB
+  const [r, g, b] = isIdle ? IDLE_RGB : PHASE_RGB[phase];
+  const prevPhase: Phase = phase === "inhale" ? "hold-out" : phase === "exhale" ? "hold-in" : phase;
+  const [pr, pg, pb] = isIdle ? IDLE_RGB : PHASE_RGB[prevPhase];
 
-  // Color for the outer glow ring
-  const glowColor = isIdle ? "var(--breath-idle)" : COLOR_MAP[phase];
+  // Smooth scale: lerp from previous-phase target → current-phase target
+  const scale = isIdle
+    ? lerp(SCALE_MIN, SCALE_MAX, 0.25)
+    : lerp(SCALE_TARGET[prevPhase], SCALE_TARGET[phase], progress);
+
+  const glowSpread = Math.round(size * 0.22 * scale);
 
   return (
     <div
       className="relative flex items-center justify-center"
       style={{ width: size, height: size }}
     >
-      {/* Outer decorative ring */}
+      {/* Decorative outer ring */}
       <div
-        className="absolute rounded-full border-2 border-brand-200/40 dark:border-brand-700/30"
+        className="absolute rounded-full border-2 border-sky-200/50 dark:border-sky-700/30"
         style={{ width: size, height: size }}
       />
 
-      {/* Soft outer glow / halo — scales with breathing */}
+      {/* Outer glow halo — scales with breathing */}
       <div
-        className="absolute rounded-full circle-glow"
+        className="absolute rounded-full"
         style={{
-          width: size * 0.72,
+          width:  size * 0.72,
           height: size * 0.72,
-          opacity: isIdle ? 0.3 : 0.9,
-          transform: `scale(${scale * 1.28})`,
-          background: `radial-gradient(circle, rgba(${glowColor.replace(/var\\(--breath-(\\w+)\\)/, (_, k) => {
-            // resolve CSS var to its rgb value for the glow gradient
-            const varMap: Record<string, string> = {
-              inhale:   "56 189 248",
-              hold:     "14 165 233",
-              exhale:   "6 182 212",
-              idle:     "148 163 184",
-            };
-            return varMap[k] ?? "148 163 184";
-          })}, 0.40) 0%, rgba(${glowColor.replace(/var\\(--breath-(\\w+)\\)/, (_, k) => {
-            const varMap: Record<string, string> = {
-              inhale:   "56 189 248",
-              hold:     "14 165 233",
-              exhale:   "6 182 212",
-              idle:     "148 163 184",
-            };
-            return varMap[k] ?? "148 163 184";
-          })}, 0.10) 55%, transparent 75%)`,
-          transition: "transform 0.15s cubic-bezier(0.4,0,0.2,1), opacity 1.2s ease",
+          transform: `scale(${scale * 1.30})`,
+          background: `radial-gradient(circle, ${rgba(r, g, b, 0.45)} 0%, ${rgba(r, g, b, 0.15)} 50%, transparent 72%)`,
+          transition: "transform 0.15s cubic-bezier(0.4,0,0.2,1), background 0.8s ease",
+          opacity: isIdle ? 0.5 : 1,
         }}
       />
 
-      {/* Animated breathing ball */}
+      {/* Inner breathing ball */}
       <div
-        className="circle-phase rounded-full shadow-2xl flex items-center justify-center"
+        className="absolute rounded-full"
         style={{
-          width: size * 0.7,
-          height: size * 0.7,
-          // Pass scale via CSS variable — CSS transition handles smoothness
-          ["--breath-scale" as string]: scale,
-          ["--breath-color" as string]: isIdle ? "var(--breath-idle)" : COLOR_MAP[phase],
-          // Subtle inner highlight
+          width:   size * 0.70,
+          height:  size * 0.70,
+          transform: `scale(${scale})`,
           background: isIdle
-            ? `rgba(var(--breath-idle), 0.70)`
-            : undefined,
+            ? rgba(...IDLE_RGB, 0.80)
+            : `radial-gradient(circle at 35% 35%, ${rgba(Math.min(r+60,255), Math.min(g+40,255), Math.min(b+30,255), 0.95)}, ${rgba(r, g, b, 0.88)} 60%, ${rgba(Math.max(r-20,0), Math.max(g-20,0), Math.max(b-20,0), 0.95)})`,
           boxShadow: isIdle
-            ? undefined
-            : `0 0 ${Math.round(size * 0.12 * scale)}px rgba(${glowColor.replace(/var\\(--breath-(\\w+)\\)/, (_, k) => {
-              const varMap: Record<string, string> = {
-                inhale:   "56 189 248",
-                hold:     "14 165 233",
-                exhale:   "6 182 212",
-                idle:     "148 163 184",
-              };
-              return varMap[k] ?? "148 163 184";
-            })}, ${0.35 * scale}), inset 0 -8px 24px rgba(0,0,0,0.15), inset 0 8px 24px rgba(255,255,255,0.15)`,
+            ? `0 0 20px ${rgba(...IDLE_RGB, 0.3)}`
+            : `0 0 ${glowSpread}px ${rgba(r, g, b, 0.55)}, inset 0 -6px 18px rgba(0,0,0,0.12), inset 0 6px 18px rgba(255,255,255,0.18)`,
+          transition: "transform 0.15s cubic-bezier(0.4,0,0.2,1), background 0.8s ease, box-shadow 0.8s ease",
         }}
       >
-        {/* Progress ring overlay */}
+        {/* Progress ring */}
         {state === "running" && (
           <svg
-            className="absolute"
-            width={size * 0.7}
-            height={size * 0.7}
+            className="absolute inset-0"
+            width={size * 0.70}
+            height={size * 0.70}
             viewBox="0 0 100 100"
           >
             <circle
-              cx="50"
-              cy="50"
-              r="48"
+              cx="50" cy="50" r="48"
               fill="none"
               stroke="white"
-              strokeOpacity="0.25"
+              strokeOpacity="0.20"
               strokeWidth="1.5"
             />
             <circle
-              cx="50"
-              cy="50"
-              r="48"
+              cx="50" cy="50" r="48"
               fill="none"
               stroke="white"
-              strokeOpacity="0.70"
+              strokeOpacity="0.65"
               strokeWidth="2"
               strokeDasharray={`${2 * Math.PI * 48}`}
               strokeDashoffset={`${2 * Math.PI * 48 * (1 - progress)}`}

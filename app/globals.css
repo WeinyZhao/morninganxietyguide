@@ -35,38 +35,6 @@ html, body {
 }
 
 /*
- * Breathing Circle — smooth scale + color transitions
- *
- * The JS layer sets --breath-scale (CSS var) on every animation frame.
- * CSS then smoothly transitions toward it with spring-like easing.
- *
- * We use a separate --breath-color CSS var that JS also updates on phase change.
- * Color transition is intentionally slower (1s) so the hue shift feels organic.
- */
-.circle-phase {
-  will-change: transform, background-color, box-shadow;
-  transform: scale(var(--breath-scale, 0.65));
-  background-color: rgba(var(--breath-color, var(--breath-idle)), 0.75);
-  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1),
-              background-color 1.2s cubic-bezier(0.4, 0, 0.2, 1),
-              box-shadow 1.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* Glow halo behind the circle — pulses with breathing */
-.circle-glow {
-  will-change: transform, opacity;
-  transform: scale(var(--breath-scale, 0.65));
-  background: radial-gradient(
-    circle,
-    rgba(var(--breath-glow), 0.35) 0%,
-    rgba(var(--breath-glow), 0.08) 55%,
-    transparent 75%
-  );
-  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1),
-              opacity 1.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/*
  * Anchor scroll offset for all hash navigation.
  *
  * scroll-padding-top on html element tells the browser to reserve 5rem
