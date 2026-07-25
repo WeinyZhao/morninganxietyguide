@@ -76,6 +76,11 @@ export default function Home() {
           © 2026 Morning Anxiety Guide. This tool is educational and not a
           substitute for professional medical advice.
         </p>
+        <p className="mt-2">
+          <a href="/about/" className="hover:underline">About</a>
+          {" · "}
+          <a href="/privacy-policy/" className="hover:underline">Privacy Policy</a>
+        </p>
       </footer>
     </main>
   );
