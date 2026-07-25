@@ -46,6 +46,18 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.8,
     },
     {
+      url: "https://morninganxietyguide.com/box-vs-4-7-8/",
+      lastModified: now,
+      changeFrequency: "monthly",
+      priority: 0.7,
+    },
+    {
+      url: "https://morninganxietyguide.com/why-do-i-wake-up-anxious-every-morning/",
+      lastModified: now,
+      changeFrequency: "monthly",
+      priority: 0.7,
+    },
+    {
       url: "https://morninganxietyguide.com/about/",
       lastModified: now,
       changeFrequency: "yearly",

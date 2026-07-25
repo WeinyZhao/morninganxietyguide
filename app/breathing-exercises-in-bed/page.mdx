@@ -20,6 +20,7 @@ export const metadata = {
   },
 };
 
+import Link from "next/link";
 import ArticleCTA from "../components/ArticleCTA";
 import ArticleLayout from "../components/ArticleLayout";
 import ArticleSchema from "../components/ArticleSchema";
@@ -245,15 +246,25 @@ If you have 30 seconds, you have time. The physiological sigh works in a single 
 
 <div className="grid sm:grid-cols-2 gap-4 my-8">
 
-<a href="/morning-anxiety-relief/" className="block p-4 bg-white dark:bg-brand-900/30 border border-brand-200 dark:border-brand-800 rounded-lg hover:border-brand-400 transition-colors">
+<Link href="/morning-anxiety-relief/" className="block p-4 bg-white dark:bg-brand-900/30 border border-brand-200 dark:border-brand-800 rounded-lg hover:border-brand-400 transition-colors">
   <div className="font-semibold text-brand-800 dark:text-brand-200">Complete Morning Anxiety Relief Guide</div>
   <div className="text-sm text-brand-600 dark:text-brand-400 mt-1">The 7-method system — start here for the full picture.</div>
-</a>
+</Link>
 
-<a href="/box-breathing-morning-anxiety/" className="block p-4 bg-white dark:bg-brand-900/30 border border-brand-200 dark:border-brand-800 rounded-lg hover:border-brand-400 transition-colors">
+<Link href="/box-breathing-morning-anxiety/" className="block p-4 bg-white dark:bg-brand-900/30 border border-brand-200 dark:border-brand-800 rounded-lg hover:border-brand-400 transition-colors">
   <div className="font-semibold text-brand-800 dark:text-brand-200">Box Breathing for Morning Anxiety</div>
   <div className="text-sm text-brand-600 dark:text-brand-400 mt-1">The 5-minute routine with a 7-day challenge.</div>
-</a>
+</Link>
+
+<Link href="/why-do-i-wake-up-anxious-every-morning/" className="block p-4 bg-white dark:bg-brand-900/30 border border-brand-200 dark:border-brand-800 rounded-lg hover:border-brand-400 transition-colors">
+  <div className="font-semibold text-brand-800 dark:text-brand-200">Why Do I Wake Up Anxious Every Morning?</div>
+  <div className="text-sm text-brand-600 dark:text-brand-400 mt-1">The science behind morning anxiety — and what actually helps.</div>
+</Link>
+
+<Link href="/box-vs-4-7-8/" className="block p-4 bg-white dark:bg-brand-900/30 border border-brand-200 dark:border-brand-800 rounded-lg hover:border-brand-400 transition-colors">
+  <div className="font-semibold text-brand-800 dark:text-brand-200">Box vs 4-7-8: Which Is Better?</div>
+  <div className="text-sm text-brand-600 dark:text-brand-400 mt-1">Side-by-side comparison to help you choose.</div>
+</Link>
 
 </div>
 
