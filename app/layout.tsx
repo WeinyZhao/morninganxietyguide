@@ -31,6 +31,9 @@ export const metadata: Metadata = {
     title: "Box Breathing Timer",
     description: "Free 4-4-4-4 breathing tool for morning anxiety relief.",
   },
+  alternates: {
+    canonical: "https://morninganxietyguide.com/",
+  },
   robots: { index: true, follow: true },
   icons: {
     icon: [
