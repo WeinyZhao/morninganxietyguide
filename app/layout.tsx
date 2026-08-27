@@ -4,6 +4,9 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://morninganxietyguide.com"),
+  verification: {
+    google: "SCxtSCdhlFIzohppIrt-j9YP4r-n-yQu50kaQ3xkWkM",
+  },
   title: {
     default: "Box Breathing Timer — Free 4-4-4-4 Tool for Morning Anxiety",
     template: "%s | Morning Anxiety Guide",
